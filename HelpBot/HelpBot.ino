@@ -56,7 +56,7 @@ void setup(){
 void loop(){
   inputKey();
   readTemp();
-  Serial.println(analogRead(A0));
+  Serial.println(analogRead(A3));
 
   
 }
@@ -87,7 +87,7 @@ void loop(){
         count = 0;
       }
     }
-    else if(key != 'A' && key != 'B' && key != 'C' && key !='D'){
+    else if(key != 'A' && key != 'B' && key != 'C' && key !='D' && key != resetKey && validPhoneNumber == false){
       lcd.print(key);
       number[count] = key;
       count++;
@@ -121,6 +121,20 @@ void loop(){
     else if(key == 'D'){
       lcd.clear();
       lcd.print("Smoke");
+    }
+    else if(key == resetKey){
+      lcd.clear();
+      lcd.print("Reseting");
+      lcd.setCursor(0, 1);
+      lcd.print("Phone number");
+      delay(500);
+      for(int i = 0; i <= 9; i++){
+        number[i] = ' ';
+      }
+      count = 0;
+      validPhoneNumber = false;
+      displayPhoneNumber(validPhoneNumber);
+
     }
 
   }
