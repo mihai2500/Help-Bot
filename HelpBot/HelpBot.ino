@@ -3,40 +3,51 @@
 
 #include <LiquidCrystal_I2C.h>
 
+//LCD displays
 LiquidCrystal_I2C lcd(0x27,16,2);
 LiquidCrystal_I2C lcd1(0x26,16,2);
 
+//ip address of the esp-32 CAM
 String ip = "12345";
 
+//DHT11 tmperature and humidity sensor
 #define DHT_SENSOR_TYPE DHT_TYPE_11
 static const int DHT_SENSOR_PIN = 13;
 DHT_Async dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 
+//MQ2 - gas sensor
 #define MQ2PIN A2
 int MQValue;
-int MQValueThreshold = 200; //replace with threshold value of MQ2
+int MQValueThreshold = 400; 
 bool gas = false;
 
+//Microphone
 #define MicPin A3
 int MicValue;
-int MicValueThreshold = 300; //replace with threshold value of Microphone
+int MicValueThreshold = 300; 
 
-
-int row = 1;
+//LCD print position
+int row = 1;          
 int column = 3;
 
 const byte ROWS = 4; 
 const byte COLS = 4; 
 
+//SIM800l and messages
+#include <SoftwareSerial.h>                    
+SoftwareSerial sim(14, 15);
+int _timeout;
+String _buffer;
 int count;
 char number[9];
 String phoneNumber;
+String contactNumber;
 bool validPhoneNumber = false;
 
 char confirmKey = '*';
 char resetKey = '#';
 
-char hexaKeys[ROWS][COLS] = {
+char hexaKeys[ROWS][COLS] = {                  //The available characters 
   {'1', '2', '3', 'A'},
   {'4', '5', '6', 'B'},
   {'7', '8', '9', 'C'},
@@ -46,7 +57,7 @@ char hexaKeys[ROWS][COLS] = {
 byte rowPins[ROWS] = {9, 8, 7, 6}; 
 byte colPins[COLS] = {5, 4, 3, 2}; 
 
-Keypad customKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); 
+Keypad numberKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); 
 
 float t;
 int h;
@@ -68,8 +79,10 @@ float conPM25;
 float ratio;
 float ratioThreshold = 1;
 
-void setup(){
+void setup(){                              //setting up the lcds, sim800l module and DSM501A dust sensor
   Serial.begin(9600);
+  _buffer.reserve(50);
+  sim.begin(9600);
   lcd.init();
   lcd.clear();         
   lcd.backlight();
@@ -105,17 +118,19 @@ void loop(){
 }
 
  void inputKey(){
-  char key = customKeypad.getKey();
+  char key = numberKeypad.getKey();                   //Receive the pressed key
   
   if (key){
     Serial.println(key);
     if(key == confirmKey){
       if(count == 9){
         Serial.println();
-        phoneNumber = number + '\0';
+        phoneNumber = number;
+        phoneNumber.trim();                           //Cut any blank characters so there is no error while using the AT commands
         Serial.println(phoneNumber);
         validPhoneNumber = true;
         displayPhoneNumber(validPhoneNumber);
+        sendMessage("Phone Number Confirmed");        //Send message to confirmed number
       }
       else{
         Serial.println("Invalid phone number");
@@ -126,11 +141,11 @@ void loop(){
             number[i] = ' ';
         }
         validPhoneNumber = false;
-        displayPhoneNumber(validPhoneNumber);
+        displayPhoneNumber(validPhoneNumber);         //Output error message if the phone number is too short
         count = 0;
       }
     }
-    else if(key != 'A' && key != 'B' && key != 'C' && key !='D' && key != resetKey && validPhoneNumber == false){
+    else if(key != 'A' && key != 'B' && key != 'C' && key !='D' && key != resetKey && validPhoneNumber == false){          //Change interface if the input phone number digits exceed the number of digits of a valid phone number
       lcd.print(key);
       number[count] = key;
       count++;
@@ -148,23 +163,23 @@ void loop(){
         displayPhoneNumber(validPhoneNumber);
       }
     }
-    else if(key == 'A'){
+    else if(key == 'A'){                       //Display the phone number/The input interface and the ip address of the esp-32 CAM
       displayPhoneNumber(validPhoneNumber);
       displayIp();
     }
-    else if(key == 'B'){
+    else if(key == 'B'){               //Display the temperature and humidity menu
       displayTemperature(lcd);
       displayHumidity(lcd1);
     }
-    else if(key == 'C'){
+    else if(key == 'C'){               //Display the gas and smoke menu
       displayGas(lcd);
       displaySmoke(lcd1);
     }
-    else if(key == 'D'){
+    else if(key == 'D'){               //Display the dust menu
       displayDust(lcd);
 
     }
-    else if(key == resetKey){
+    else if(key == resetKey){          //Reset the phone number
       lcd.clear();
       lcd.print("Reseting");
       lcd.setCursor(0, 1);
@@ -182,7 +197,7 @@ void loop(){
   }
  }
  
- void displayPhoneNumber(boolean valid){
+ void displayPhoneNumber(boolean valid){           //Displaying the confirmed phone number or the interface to input a phone number
   if(valid){
     lcd.clear();
     lcd.setCursor(0,0);
@@ -207,7 +222,7 @@ void loop(){
   
  }
 
-static bool measure_environment(float *temperature, float *humidity) {
+static bool measure_environment(float *temperature, float *humidity) {      //measure temperature and humidity every 200ms
     static unsigned long measurement_timestamp = millis();
     if (millis() - measurement_timestamp > 200ul) {
         if (dht_sensor.measure(temperature, humidity)) {
@@ -218,7 +233,7 @@ static bool measure_environment(float *temperature, float *humidity) {
     return (false);
 }
 
-void readTemp(){
+void readTemp(){                                            //Measures temperature and humidity
   float temperature;
   float humidity;
     if (measure_environment(&temperature, &humidity)) {
@@ -230,9 +245,13 @@ void readTemp(){
         Serial.print(humidity, 1);
         Serial.println("%");
     }
+  if(temperature > 30){
+    sendMessage("High temperature");       //Sending message if the temperature surpases the threshold level
+    checkGas();
+  }
 }
 
-void readAnalogSensors(){
+void readAnalogSensors(){                 //Reading input from MQ and microphone pins
   MQValue = analogRead(MQ2PIN);
   MicValue = analogRead(MicPin);
   if(MQValue < MQValueThreshold)
@@ -241,22 +260,26 @@ void readAnalogSensors(){
     Serial.println("GAZ");
   if(MicValue < MicValueThreshold)
     Serial.println(MicValue);
-  else
+  else{
     Serial.println("Zgomot");
+    sendMessage("Noise heared in the baby's room");       //Sending message if loud noises occur
+  }
 }
 
-void checkGas(){
+void checkGas(){                 //Checking if there is any gas present
   MQValue = analogRead(MQ2PIN);
   if(MQValue > MQValueThreshold){
     gas = true;
     checkDust();
     checkSmoke();
+    if(checkSmoke() == false)
+      sendMessage("Gas Alert");       //Sending mesage if there is gas detected
   }
   else
     gas = false;
 }
 
-bool checkDust(){
+bool checkDust(){            //Checking the level of dust in the air
   readDSM();
   if(ratio < ratioThreshold)
     return false;
@@ -264,10 +287,12 @@ bool checkDust(){
     return true; 
 }
 
-bool checkSmoke(){
+bool checkSmoke(){            //Chechking if there is smoke present in the air
   checkDust();
-  if(checkDust == true && checkGas == true)
+  if(checkDust == true && checkGas == true){
+    sendMessage("Smoke alert");
     return true;
+  }
   else
     return false;
 }
@@ -284,7 +309,7 @@ void readDSM(){
     return;
   }
   
-  while (elapsedtime < endtime) //Only after 30s has passed we calcualte the ratio
+  while (elapsedtime < endtime) //Calculating the ration only after the set time elapsed, in our case
   {
     durationPM1 = pulseIn(PM1PIN, LOW);
     durationPM25 = pulseIn(PM25PIN, LOW);
@@ -294,13 +319,6 @@ void readDSM(){
 
     elapsedtime = millis();    
   }
-      /*
-    ratio1 = (lowpulseoccupancy/1000000.0)/30.0*100.0; //Calculate the ratio
-    Serial.print("ratio1: ");
-    Serial.println(ratio1);
-    
-    concentration = 0.001915 * pow(ratio1,2) + 0.09522 * ratio1 - 0.04884;//Calculate the mg/m3
-    */
     conPM1 = calculateConcentration(lowpulseoccupancyPM1,0.01);
     conPM25 = calculateConcentration(lowpulseoccupancyPM25,0.01);
     Serial.print("PM1 ");
@@ -311,8 +329,8 @@ void readDSM(){
 
 float calculateConcentration(long lowpulseInMicroSeconds, long durationinSeconds){
   
-  ratio = (lowpulseInMicroSeconds/1000000.0)/30.0*100.0; //Calculate the ratio
-  float concentration = 0.001915 * pow(ratio,2) + 0.09522 * ratio - 0.04884;//Calculate the mg/m3
+  ratio = (lowpulseInMicroSeconds/1000000.0)/30.0*100.0;   //Calculate the ratio
+  float concentration = 0.001915 * pow(ratio,2) + 0.09522 * ratio - 0.04884;   //Calculate the mg/m3
   Serial.print("lowpulseoccupancy:");
   Serial.print(lowpulseInMicroSeconds);
   Serial.print("    ratio:");
@@ -322,21 +340,21 @@ float calculateConcentration(long lowpulseInMicroSeconds, long durationinSeconds
   return concentration;
 }
 
-void displayTemperature(LiquidCrystal_I2C screen){
+void displayTemperature(LiquidCrystal_I2C screen){     //Display the temperature
   screen.clear();
   screen.print("Temperature");
   screen.setCursor(0, 1);
   screen.print(String(t) + "°C");
 }
 
-void displayHumidity(LiquidCrystal_I2C screen){
+void displayHumidity(LiquidCrystal_I2C screen){      //Display the humidity
   screen.clear();
   screen.print("Humidity");
   screen.setCursor(0, 1);
   screen.print(String(h) + "%");
 }
 
-void displayGas(LiquidCrystal_I2C screen){
+void displayGas(LiquidCrystal_I2C screen){       //Display on lcd if there is any gas present
   screen.clear();
   screen.print("Gas");
   readAnalogSensors();
@@ -347,7 +365,7 @@ void displayGas(LiquidCrystal_I2C screen){
       screen.print("GAS DETECTED");
 }
 
-void displaySmoke(LiquidCrystal_I2C screen){
+void displaySmoke(LiquidCrystal_I2C screen){    //Display if there is smoke detected
   screen.clear();
   screen.print("Smoke");
   screen.setCursor(0, 1);
@@ -358,7 +376,7 @@ void displaySmoke(LiquidCrystal_I2C screen){
       screen.print("No");
 }
 
-void displayDust(LiquidCrystal_I2C screen){
+void displayDust(LiquidCrystal_I2C screen){       //Display dust level on the lcd
   screen.clear();
   screen.print("Dust:");
   screen.setCursor(0, 1);
@@ -370,7 +388,7 @@ void displayDust(LiquidCrystal_I2C screen){
     screen.print("High level of dust");
 }
 
-void displayIp(){
+void displayIp(){        //Display the ip address of the Esp-32 CAM
   lcd1.clear();
   lcd1.print("IP Address:");
   lcd1.setCursor(0,1);
@@ -378,5 +396,28 @@ void displayIp(){
   lcd1.setCursor(column,row);
 }
 
-
+void sendMessage(String SMS)
+{
+  Serial.println ("Sending Message");
+  sim.println("AT+CMGF=1");    //Sets the GSM Module in Text Mode
+  delay(1000);
+  sim.println("AT+CMGS=\"" + phoneNumber + "\"\r"); //Mobile phone number to send message
+  delay(1000);
+  sim.println(SMS);
+  delay(100);
+  sim.println((char)26);// ASCII code of CTRL+Z in order to send message
+  delay(1000);
+  _buffer = _readSerial();
+}
+String _readSerial() {
+  _timeout = 0;
+  while  (!sim.available() && _timeout < 8000  )
+  {
+    delay(13);
+    _timeout++;
+  }
+  if (sim.available()) {
+    return sim.readString();
+  }
+}
 
