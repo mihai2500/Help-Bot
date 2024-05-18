@@ -8,7 +8,7 @@ LiquidCrystal_I2C lcd(0x27,16,2);
 LiquidCrystal_I2C lcd1(0x26,16,2);
 
 //ip address of the esp-32 CAM
-String ip = "12345";
+String ip = "192.168.42.75";
 
 //DHT11 tmperature and humidity sensor
 #define DHT_SENSOR_TYPE DHT_TYPE_11
@@ -47,18 +47,20 @@ bool validPhoneNumber = false;
 char confirmKey = '*';
 char resetKey = '#';
 
-char hexaKeys[ROWS][COLS] = {                  //The available characters 
+char hexaKeys[ROWS][COLS] = {                  //The available characters of the keypad
   {'1', '2', '3', 'A'},
   {'4', '5', '6', 'B'},
   {'7', '8', '9', 'C'},
   {'*', '0', '#', 'D'}
 };
 
+//Keypad's rows and columns pins
 byte rowPins[ROWS] = {9, 8, 7, 6}; 
 byte colPins[COLS] = {5, 4, 3, 2}; 
 
 Keypad numberKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); 
 
+//variables for displaying temperature and humidity
 float t;
 int h;
 
@@ -73,33 +75,41 @@ unsigned long sampletime_ms = 10;
 unsigned long lowpulseoccupancyPM1 = 0;
 unsigned long lowpulseoccupancyPM25 = 0;
 
+//the DSM501A detecting detects fine particles as small as 1μm and up to 2.5μm
 float conPM1;
 float conPM25;
 
 float ratio;
-float ratioThreshold = 1;
+float ratioThreshold = 0.97;
 
-void setup(){                              //setting up the lcds, sim800l module and DSM501A dust sensor
+int temperatureThreshold = 30;
+int humidityThreshold = 60; 
+
+void setup(){                              
   Serial.begin(9600);
   _buffer.reserve(50);
   sim.begin(9600);
-  lcd.init();
-  lcd.clear();         
-  lcd.backlight();
-
-  lcd.print("Phone Number:");
-  lcd.setCursor(0,1);
-  lcd.print("+40");
-  lcd.setCursor(column,row);
-
-  lcd1.init();
-  lcd1.clear();         
-  lcd1.backlight();
+  setupLCDs();
 
   displayIp();
 
   setupDSM();
 
+}
+
+void setupLCDs(){
+  lcd.init();
+  lcd1.init();
+  lcd.clear();         
+  lcd1.clear();         
+  lcd.backlight();
+  lcd1.backlight();
+
+  lcd.print("Phone Number:");
+  lcd.setCursor(0,1);
+  lcd.print("+40");
+  lcd.setCursor(column,row);
+  displayIp();
 }
 
 void setupDSM() {
@@ -110,11 +120,8 @@ void setupDSM() {
 void loop(){
   inputKey();
   readTemp();
-  //Serial.println(analogRead(A3));
-
   readAnalogSensors();
   checkGas();
-  //readDSM();
 }
 
  void inputKey(){
@@ -130,7 +137,7 @@ void loop(){
         Serial.println(phoneNumber);
         validPhoneNumber = true;
         displayPhoneNumber(validPhoneNumber);
-        sendMessage("Phone Number Confirmed");        //Send message to confirmed number
+        sendMessage("Phone number successfully associated with HelpBot");        //Send message to confirmed number
       }
       else{
         Serial.println("Invalid phone number");
@@ -189,11 +196,10 @@ void loop(){
         number[i] = ' ';
       }
       count = 0;
+      sendMessage("Reseting the phone number associated with HelpBot has been successful");
       validPhoneNumber = false;
       displayPhoneNumber(validPhoneNumber);
-
     }
-
   }
  }
  
@@ -245,9 +251,12 @@ void readTemp(){                                            //Measures temperatu
         Serial.print(humidity, 1);
         Serial.println("%");
     }
-  if(temperature > 30){
+  if(temperature > temperatureThreshold){
     sendMessage("High temperature");       //Sending message if the temperature surpases the threshold level
     checkGas();
+  }
+  if(humidity > humidityThreshold){
+    sendMessage("High humidity");
   }
 }
 
@@ -255,13 +264,12 @@ void readAnalogSensors(){                 //Reading input from MQ and microphone
   MQValue = analogRead(MQ2PIN);
   MicValue = analogRead(MicPin);
   if(MQValue < MQValueThreshold)
-    Serial.println("MQ e bine");
+    Serial.println(MQValue);
   else
     Serial.println("GAZ");
   if(MicValue < MicValueThreshold)
     Serial.println(MicValue);
   else{
-    Serial.println("Zgomot");
     sendMessage("Noise heared in the baby's room");       //Sending message if loud noises occur
   }
 }
@@ -398,6 +406,7 @@ void displayIp(){        //Display the ip address of the Esp-32 CAM
 
 void sendMessage(String SMS)
 {
+  if(validPhoneNumber){                      //Check if any phone number is associated with HelpBot
   Serial.println ("Sending Message");
   sim.println("AT+CMGF=1");    //Sets the GSM Module in Text Mode
   delay(1000);
@@ -405,13 +414,14 @@ void sendMessage(String SMS)
   delay(1000);
   sim.println(SMS);
   delay(100);
-  sim.println((char)26);// ASCII code of CTRL+Z in order to send message
+  sim.println((char)26);     //ASCII code of CTRL+Z in order to send message
   delay(1000);
   _buffer = _readSerial();
+  }
 }
 String _readSerial() {
   _timeout = 0;
-  while  (!sim.available() && _timeout < 8000  )
+  while  (!sim.available() && _timeout < 8000  )          
   {
     delay(13);
     _timeout++;
@@ -420,4 +430,3 @@ String _readSerial() {
     return sim.readString();
   }
 }
-
