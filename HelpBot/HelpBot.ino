@@ -8,7 +8,7 @@ LiquidCrystal_I2C lcd(0x27,16,2);
 LiquidCrystal_I2C lcd1(0x26,16,2);
 
 //ip address of the esp-32 CAM
-String ip = "192.168.42.75";
+String ip = "192.168.174.75";
 
 //DHT11 tmperature and humidity sensor
 #define DHT_SENSOR_TYPE DHT_TYPE_11
@@ -90,10 +90,18 @@ void setup(){
   _buffer.reserve(50);
   sim.begin(9600);
   setupLCDs();
-
-  displayIp();
-
   setupDSM();
+
+  lcd.print("Initializing...");
+  lcd1.print("Please Wait");
+  delay(20000);   //time for MQ to warm up and for SIM800l to connect to network
+
+  lcd.clear();
+  lcd.print("Phone Number:");
+  lcd.setCursor(0,1);
+  lcd.print("+40");
+  lcd.setCursor(column,row);
+  displayIp();
 
 }
 
@@ -105,11 +113,7 @@ void setupLCDs(){
   lcd.backlight();
   lcd1.backlight();
 
-  lcd.print("Phone Number:");
-  lcd.setCursor(0,1);
-  lcd.print("+40");
-  lcd.setCursor(column,row);
-  displayIp();
+  
 }
 
 void setupDSM() {
@@ -252,11 +256,11 @@ void readTemp(){                                            //Measures temperatu
         Serial.println("%");
     }
   if(temperature > temperatureThreshold){
-    sendMessage("High temperature");       //Sending message if the temperature surpases the threshold level
+    sendMessage("High temperature detected");       //Sending message if the temperature surpases the threshold level
     checkGas();
   }
   if(humidity > humidityThreshold){
-    sendMessage("High humidity");
+    sendMessage("High humidity detected");
   }
 }
 
@@ -281,7 +285,7 @@ void checkGas(){                 //Checking if there is any gas present
     checkDust();
     checkSmoke();
     if(checkSmoke() == false)
-      sendMessage("Gas Alert");       //Sending mesage if there is gas detected
+      sendMessage("Gas alert");       //Sending mesage if there is gas detected
   }
   else
     gas = false;
