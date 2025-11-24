@@ -49,7 +49,7 @@ Developed using Arduino and ESP32 technology, this robot monitors critical data 
 | **Keypad Rows** | 9, 8, 7, 6 | Matrix Rows |
 | **Keypad Cols** | 5, 4, 3, 2 | Matrix Columns |
 
-## ⚙️ Software Setup
+## Software Setup
 
 The project consists of two distinct firmware uploads:
 
@@ -68,7 +68,7 @@ The project consists of two distinct firmware uploads:
     * `LiquidCrystal_I2C.h`
 4.  Upload the code to your Arduino board.
 
-## 📱 How to Use
+## How to Use
 
 ### Initialization
 Upon booting, the system displays "Initializing..." for approximately **20 seconds**. This delay allows the MQ-2 gas sensor to warm up and the SIM800L to connect to the mobile network.
